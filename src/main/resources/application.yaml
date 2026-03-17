@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    # Docker로 띄웠을 때 기준 설정
+    url: jdbc:mysql://localhost:3306/test_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      # 과제에서는 테이블 자동 생성을 위해 update 또는 create 사용
+      ddl-auto: update
+    show-sql: true # 실행되는 쿼리를 콘솔에 출력
+    properties:
+      hibernate:
+        format_sql: true
+        # MySQL 8.0 이상이라면 아래 dialect 설정이 안전합니다
+#        dialect: org.hibernate.dialect.MySQL8Dialect

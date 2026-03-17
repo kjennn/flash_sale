@@ -1,0 +1,7 @@
+package com.example.flash_sale.order;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+
+public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
+}
