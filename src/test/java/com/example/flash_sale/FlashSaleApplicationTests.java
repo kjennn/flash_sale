@@ -1,6 +1,9 @@
 package com.example.flash_sale;
 
 import com.example.flash_sale.order.OrderService;
+import com.example.flash_sale.payment.PaymentComponent;
+import com.example.flash_sale.payment.PaymentRepository;
+import com.example.flash_sale.payment.PaymentRequest;
 import com.example.flash_sale.product.ProductEntity;
 import com.example.flash_sale.product.ProductRepository;
 import com.example.flash_sale.user.UserEntity;
@@ -17,7 +20,9 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
@@ -31,6 +36,12 @@ class FlashSaleApplicationTests {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private PaymentComponent paymentComponent;
+
+	@Autowired
+	private PaymentRepository paymentRepository;
 
 	private ProductEntity productId;
 	private List<Long> userIds = new ArrayList<>();
@@ -83,4 +94,42 @@ class FlashSaleApplicationTests {
 	}
 
 
+	@Test
+	@DisplayName("동일한 주문번호로 동시에 10번 요청해도 결제는 1번만 생성되어야 한다")
+	void idempotencyConcurrencyTest() throws InterruptedException {
+		// Given
+		int threadCount = 10;
+		ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+		CountDownLatch latch = new CountDownLatch(threadCount);
+
+		Long orderId = 99L;
+		PaymentRequest request = new PaymentRequest(orderId, 50000L, "CARD");
+
+		// When
+		AtomicInteger successCount = new AtomicInteger();
+		AtomicInteger failCount = new AtomicInteger();
+
+		for (int i = 0; i < threadCount; i++) {
+			executorService.submit(() -> {
+				try {
+					paymentComponent.pay(request);
+					successCount.incrementAndGet();
+				} catch (Exception e) {
+					failCount.incrementAndGet();
+				} finally {
+					latch.countDown();
+				}
+			});
+		}
+		latch.await();
+
+		// 1. 성공은 딱 1번만 있어야 함
+		assertThat(paymentRepository.count()).isEqualTo(1); //
+		// 2. 나머지는 중복 요청으로 실패(에러) 처리되어야 함
+		assertThat(failCount.get()).isEqualTo(threadCount - 1);
+		// 3. DB에도 데이터가 딱 1개만 있어야 함
+		assertThat(paymentRepository.findAll().size()).isEqualTo(1);
+
+
+	}
 }
