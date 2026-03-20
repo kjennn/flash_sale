@@ -1,5 +1,9 @@
 package com.example.flash_sale;
 
+import com.example.flash_sale.fee.MerchantCategory;
+import com.example.flash_sale.fee.SettlementResponse;
+import com.example.flash_sale.fee.SettlementService;
+import com.example.flash_sale.fee.Transaction;
 import com.example.flash_sale.order.OrderService;
 import com.example.flash_sale.payment.PaymentComponent;
 import com.example.flash_sale.payment.PaymentRepository;
@@ -15,12 +19,15 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,6 +49,10 @@ class FlashSaleApplicationTests {
 
 	@Autowired
 	private PaymentRepository paymentRepository;
+
+
+	@Autowired
+	private SettlementService settlementService;
 
 	private ProductEntity productId;
 	private List<Long> userIds = new ArrayList<>();
@@ -131,5 +142,48 @@ class FlashSaleApplicationTests {
 		assertThat(paymentRepository.findAll().size()).isEqualTo(1);
 
 
+	}
+
+
+	@Test
+	@DisplayName("카테고리 A 의 9,999원 결제 시 1% 수수료 적용")
+	void categoryA_edgeCaseTest() {
+		// Given: 9,999원 결제 (10,000원 이하이므로 1% 수수료 대상)
+		Transaction tx = new Transaction(
+				99L,
+				MerchantCategory.A,
+				new BigDecimal("9999"),
+				LocalDateTime.now()
+		);
+
+		// When
+		SettlementResponse result = settlementService.calcuateSettlement(tx);
+
+		// Then
+		// 9,999 * 0.01 = 99.99원 -> 버림(FLOOR) 정책 시 99원
+		assertThat(result.feeAmount()).isEqualByComparingTo("99");
+		assertThat(result.finalAmount()).isEqualByComparingTo("9900");
+
+	}
+
+	@Test
+	@DisplayName("다양한 카테고리가 섞인 1,000건의 정산을 일괄 처리")
+	void batchSettlementTest() {
+		// Given: A, B 카테고리가 섞인 1,000개의 데이터 생성
+		List<Transaction> transactions = IntStream.range(0, 1000)
+				.mapToObj(i -> new Transaction(
+                        (long) i,
+						(i % 2 == 0) ? MerchantCategory.A : MerchantCategory.B,
+						new BigDecimal("10000"),
+						LocalDateTime.now()
+				)).toList();
+
+		// When
+		List<SettlementResponse> results = settlementService.calculateAll(transactions);
+
+		// Then
+		assertThat(results.size()).isEqualTo(1000);
+		// A 카테고리(짝수)는 1% 수수료인 100원인지 확인
+		assertThat(results.get(0).feeAmount()).isEqualByComparingTo("100");
 	}
 }
